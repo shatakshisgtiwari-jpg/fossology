@@ -100,7 +100,7 @@ class Downloader:
     # This list is more specific for common archive types
     archive_extensions = [
       '.tar.gz', '.tgz', '.tar.bz2', '.tbz', '.tar.xz', '.txz', '.zip', '.whl',
-      '.tar'
+      '.jar', '.tar'
     ]
     file_extension = ''
     for ext in archive_extensions:
@@ -132,7 +132,7 @@ class Downloader:
           f.write(chunk)
       logging.info(f"Downloaded {package_name} to {temp_archive_path}")
 
-      if temp_archive_path.lower().endswith('.zip'):
+      if temp_archive_path.lower().endswith(('.zip', '.jar')):
         with zipfile.ZipFile(temp_archive_path, 'r') as zip_ref:
           zip_ref.extractall(package_folder)
         base_dir = self.__get_archive_base_dir(

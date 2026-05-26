@@ -29,7 +29,8 @@ from FoScanner.Utils import (
   validate_keyword_conf_file, copy_keyword_file_to_destination
 )
 from ScanDeps.Downloader import Downloader
-from ScanDeps.Parsers import Parser, PythonParser, NPMParser
+from ScanDeps.Parsers import (Parser, PythonParser, NPMParser,
+                               ComposerParser, MavenParser)
 
 SPDX3_FORMATS = (ReportFormat.SPDX3_JSON, ReportFormat.SPDX3_TTL, ReportFormat.SPDX3_RDF)
 
@@ -421,6 +422,14 @@ def main(parsed_args):
     if cli_options.parser.npm_components:
       npm_parser = NPMParser()
       npm_parser.parse_components(cli_options.parser)
+
+    if cli_options.parser.php_components:
+      composer_parser = ComposerParser()
+      composer_parser.parse_components(cli_options.parser)
+
+    if cli_options.parser.maven_components:
+      maven_parser = MavenParser()
+      maven_parser.parse_components(cli_options.parser)
 
     if cli_options.parser.unsupported_components:
       for comp in cli_options.parser.unsupported_components:

@@ -118,9 +118,16 @@ class Parser:
             comp.get(COMPONENT_TYPE_KEY) == 'composer']
 
   @property
+  def maven_components(self) -> list[dict[str, Any]]:
+    return [comp for comp in self.parsed_components.values() if
+            comp.get(COMPONENT_TYPE_KEY) == 'maven']
+
+  @property
   def unsupported_components(self) -> list[dict[str, Any]]:
     return [comp for comp in self.parsed_components.values() if
-            comp.get(COMPONENT_TYPE_KEY) not in ['pypi', 'npm', 'composer']]
+            comp.get(COMPONENT_TYPE_KEY) not in [
+              'pypi', 'npm', 'composer', 'maven'
+            ]]
 
 
 class PythonParser:
@@ -269,4 +276,181 @@ class NPMParser:
       except Exception as e:
         logging.error(
           f"Invalid Download URL for NPM package: {name} ({purl}) :: {e}"
+        )
+
+
+class ComposerParser:
+  """
+  Composer Parser to parse PHP sboms to generate download urls from
+  cyclonedx format sbom files using the Packagist API.
+  """
+
+  def _generate_api_endpoint(self, vendor: str, package: str) -> str:
+    """
+    Generate Packagist API endpoint to fetch package metadata.
+    Args:
+        vendor: str Vendor/namespace of the package
+        package: str Name of the package
+    Return:
+        Packagist API endpoint URL
+    """
+    return f"https://repo.packagist.org/p2/{vendor}/{package}.json"
+
+  def parse_components(self, parser: Parser) -> None:
+    """
+    Parse SBOM file for PHP package name and download url.
+    Return:
+        None
+    """
+    for comp in parser.php_components:
+      purl = comp.get('purl')
+      if not purl:
+        logging.warning(
+          f"Composer component missing PURL: {comp}. Skipping."
+        )
+        continue
+
+      component = parser.parsed_components.get(purl)
+      if not component:
+        logging.warning(
+          f"Component with PURL {purl} not found in parsed_components. "
+          "Skipping."
+        )
+        continue
+
+      try:
+        parsed_purl = PackageURL.from_string(purl)
+      except ValueError as e:
+        logging.warning(f"Could not parse PURL '{purl}': {e}. Skipping.")
+        continue
+
+      vendor = parsed_purl.namespace
+      package_name = parsed_purl.name
+      version = parsed_purl.version
+
+      if not vendor or not package_name or not version:
+        logging.warning(
+          f"Composer component {purl} missing namespace, name, or version. "
+          "Skipping."
+        )
+        continue
+
+      api_endpoint = self._generate_api_endpoint(vendor, package_name)
+      logging.info(
+        f"API endpoint for {vendor}/{package_name} : {api_endpoint}"
+      )
+
+      try:
+        response = requests.get(api_endpoint, timeout=10)
+        response.raise_for_status()
+
+        data = response.json()
+        packages = data.get('packages', {}).get(
+          f"{vendor}/{package_name}", []
+        )
+
+        download_url = None
+        for release in packages:
+          if release.get('version') == version:
+            download_url = release.get('dist', {}).get('url')
+            source_url = release.get('source', {}).get('url')
+            if source_url:
+              component['vcs_url'] = source_url
+            break
+
+        if download_url:
+          component[DOWNLOAD_URL_KEY] = download_url
+        else:
+          logging.warning(
+            f"No download URL found for {vendor}/{package_name} {version}"
+          )
+
+      except requests.exceptions.RequestException as e:
+        logging.error(
+          f"Failed to retrieve data for {vendor}/{package_name} {version} "
+          f"from {api_endpoint}: {e}"
+        )
+      except json.JSONDecodeError:
+        logging.error(
+          f"Failed to decode JSON response from {api_endpoint} for "
+          f"{vendor}/{package_name} {version}."
+        )
+      except Exception as e:
+        logging.error(
+          f"An unexpected error occurred while parsing Composer component "
+          f"{purl}: {e}"
+        )
+
+
+class MavenParser:
+  """
+  Maven Parser to parse Java/Kotlin sboms to generate download urls from
+  cyclonedx format sbom files using purl2url and Maven Central.
+  """
+
+  MAVEN_CENTRAL_BASE = "https://repo1.maven.org/maven2"
+
+  def _get_download_url(self, purl: str) -> str | None:
+    """
+    Get download url from purl for Maven packages.
+    Tries purl2url first, falls back to constructing Maven Central URL.
+    Args:
+        purl: str
+    Return:
+        download_url: str | None
+    """
+    url = purl2url.get_download_url(purl)
+    if url:
+      return url
+
+    # Fallback: construct Maven Central URL directly
+    try:
+      parsed_purl = PackageURL.from_string(purl)
+      group_id = parsed_purl.namespace
+      artifact_id = parsed_purl.name
+      version = parsed_purl.version
+      if not group_id or not artifact_id or not version:
+        return None
+      group_path = group_id.replace('.', '/')
+      return (
+        f"{self.MAVEN_CENTRAL_BASE}/{group_path}/{artifact_id}/{version}/"
+        f"{artifact_id}-{version}-sources.jar"
+      )
+    except ValueError:
+      return None
+
+  def parse_components(self, parser: Parser) -> None:
+    """
+    Parse the components to extract download URLs for Maven packages.
+    Prefers source JARs for license scanning.
+    Return:
+        None
+    """
+    for comp in parser.maven_components:
+      purl = comp.get('purl')
+      if not purl:
+        logging.warning(f"Maven component missing PURL: {comp}. Skipping.")
+        continue
+
+      component = parser.parsed_components.get(purl)
+      if not component:
+        logging.warning(
+          f"Component with PURL {purl} not found in parsed_components. "
+          f"Skipping."
+        )
+        continue
+
+      name = component.get('name', 'unknown_name')
+      try:
+        download_url = self._get_download_url(purl)
+        if download_url:
+          component[DOWNLOAD_URL_KEY] = download_url
+        else:
+          logging.warning(
+            f"No download URL could be determined for Maven package: "
+            f"{name} ({purl})"
+          )
+      except Exception as e:
+        logging.error(
+          f"Invalid Download URL for Maven package: {name} ({purl}) :: {e}"
         )
