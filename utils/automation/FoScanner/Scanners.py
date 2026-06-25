@@ -16,6 +16,15 @@ from .CliOptions import CliOptions
 from .Packages import Packages
 
 
+# ---------------------------------------------------------------------------
+# Single source of truth for "no-license" sentinel values.
+# Used by both scanner processing (here) and dashboard reporting.
+# ---------------------------------------------------------------------------
+_NO_LICENSE = frozenset({
+  'No_license_found', 'NOASSERTION', 'NONE', 'UnclassifiedLicense',
+})
+
+
 class ScanResult:
   """
   Store scan results from agents.
@@ -265,7 +274,7 @@ class Scanners:
             current_findings.append(finding)
           elif (
               result_key == 'licenses'
-              and finding.get('license') != "No_license_found"
+              and finding.get('license') not in _NO_LICENSE
           ):
             current_findings.append(finding)
         else:
@@ -279,18 +288,21 @@ class Scanners:
           ):
             continue
 
-          if content and content != "No_license_found":
+          if content and content not in _NO_LICENSE:
             current_findings.add(content)
 
-      if (whole and current_findings) or (not whole and current_findings):
-        if whole:
-          processed_list.append(
-            ScanResultList(file_path, result_entry['file'], current_findings)
-          )
-        else:
-          processed_list.append(
-            ScanResult(file_path, result_entry['file'], current_findings)
-          )
+      # Always create a result entry when the scanner returned findings for
+      # this file, even if all values were NO_LICENSE — the dashboard needs
+      # these to count them in "Total Files" and "Files Without License".
+      # `findings_list` is non-None here (checked above).
+      if whole:
+        processed_list.append(
+          ScanResultList(file_path, result_entry['file'], current_findings)
+        )
+      else:
+        processed_list.append(
+          ScanResult(file_path, result_entry['file'], current_findings)
+        )
 
     return processed_list
 
