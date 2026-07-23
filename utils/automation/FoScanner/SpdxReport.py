@@ -256,20 +256,30 @@ class SpdxReport(ReportBase):
     :param pkg_name: Package to which the file belongs.
     :return: SPDX ID for the file.
     """
-    return f"SPDXRef-File-{pkg_name}-{sha256_hash}"
+    safe_name = re.sub(r'[^A-Za-z0-9\-.]', '-', pkg_name)
+    return f"SPDXRef-File-{safe_name}-{sha256_hash}"
 
   @staticmethod
   def __get_package_spdx_id(component: dict) -> str:
     """
     Generate SPDX ID for a package/component.
 
+    Uses the full PURL (if available) as the unique key to avoid
+    collisions when multiple components share the same name+version
+    but differ in qualifiers (e.g. different ecosystems).
+
     :param component: Package/component to get SPDX ID for.
     :return: SPDX ID for the package.
     """
     pkg_name = component.get('name', '')
     pkg_version = component.get('version', '')
+    purl = component.get('purl', '')
+    if purl:
+      unique_key = purl
+    else:
+      unique_key = f"{pkg_name}_{pkg_version}"
     return "SPDXRef-Package-" + hashlib.md5(
-      f"{pkg_name}_{pkg_version}".encode('utf-8', errors='ignore')
+      unique_key.encode('utf-8', errors='ignore')
     ).hexdigest()
 
   def write_report(self, file_name: str):
