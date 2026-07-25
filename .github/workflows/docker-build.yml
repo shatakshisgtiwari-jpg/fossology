@@ -20,6 +20,10 @@ on:
       - published
   workflow_dispatch:
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   docker-build:
     runs-on: ubuntu-latest
@@ -35,11 +39,12 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v4
 
-    - name: Login to DockerHub
+    - name: Login to GitHub Container Registry
       uses: docker/login-action@v4
       with:
-        username: ${{ secrets.DOCKERHUB_USERNAME }}
-        password: ${{ secrets.DOCKERHUB_TOKEN }}
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Set build version
       run: |
@@ -50,7 +55,7 @@ jobs:
       uses: docker/build-push-action@v7
       with:
         push: true
-        tags: fossology/fossology:latest
+        tags: ghcr.io/${{ github.repository }}:latest
         context: .
         cache-from: type=gha
         cache-to: type=gha,mode=max
@@ -61,7 +66,7 @@ jobs:
       uses: docker/build-push-action@v7
       with:
         push: true
-        tags: fossology/fossology:scanner
+        tags: ghcr.io/${{ github.repository }}:scanner
         file: utils/automation/Dockerfile.ci
         cache-from: type=gha
         cache-to: type=gha,mode=max
