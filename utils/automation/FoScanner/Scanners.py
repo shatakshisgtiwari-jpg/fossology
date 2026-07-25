@@ -7,6 +7,7 @@
 
 import fnmatch
 import json
+import logging
 import multiprocessing
 import os
 from subprocess import Popen, PIPE
@@ -210,8 +211,15 @@ class Scanners:
     license scanning.
     """
     dir_to_scan = self.cli_options.diff_dir if is_parent else os.path.join(
-      component['download_dir'], component['base_dir']
+      component['download_dir'],
+      component.get('base_dir', component.get('download_dir', '.'))
     )
+
+    if not os.path.isdir(dir_to_scan):
+      logging.warning(
+        f"Scan directory does not exist: {dir_to_scan} - skipping component"
+      )
+      return []
 
     raw_results = scanner_func(dir_to_scan)
     processed_list: list[ScanResult] | list[ScanResultList] = []
