@@ -341,14 +341,17 @@ class SpdxReport(ReportBase):
     for purl, component in (
         self.scanner.get_scan_packages().dependencies.items()
     ):
+      pkg_spdx_id = self.__get_package_spdx_id(component)
+      is_new_package = pkg_spdx_id not in self.dependent_packages
       package = self.__get_package_for_component(component)
-      self.document.packages.append(package)
-      depends_on_relationship = Relationship(
-        self.package.spdx_id,
-        RelationshipType.DEPENDS_ON,
-        package.spdx_id
-      )
-      self.document.relationships.append(depends_on_relationship)
+      if is_new_package:
+        self.document.packages.append(package)
+        depends_on_relationship = Relationship(
+          self.package.spdx_id,
+          RelationshipType.DEPENDS_ON,
+          package.spdx_id
+        )
+        self.document.relationships.append(depends_on_relationship)
 
   def __get_package_for_component(self, component: dict) -> Package:
     """
